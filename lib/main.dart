@@ -1,4 +1,6 @@
+import 'package:bokk_yoon/features/onboarding/splash/splash-screen.dart';
 import 'package:flutter/material.dart';
+import 'core/theme/app_theme.dart';
 
 void main() {
   runApp(const BokkYoonApp());
@@ -12,9 +14,8 @@ class BokkYoonApp extends StatelessWidget {
     return MaterialApp(
       title: 'Bokk Yoon',
       debugShowCheckedModeBanner: false,
-      home: const Scaffold(
-        body: Center(child: Text('Bokk Yoon')),
-      ),
+      theme: AppTheme.light,
+      home: const SplashScreen(),
     );
   }
 }
