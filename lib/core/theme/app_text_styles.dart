@@ -17,7 +17,7 @@ class AppTextStyles {
   // Titre d'écran — 20px 700
   // Ex : "Rechercher un trajet", "Trajets suggérés", "Mes réservations"
   static TextStyle titleLarge = GoogleFonts.dmSans(
-    fontSize: 20,
+    fontSize: 30,
     fontWeight: FontWeight.w700,
     color: AppColors.textPrimary,
   );

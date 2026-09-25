@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "760619551268",
+    "project_id": "bokk-yoon",
+    "storage_bucket": "bokk-yoon.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:760619551268:android:8e3e436c4fc090f44fa6b1",
+        "android_client_info": {
+          "package_name": "sn.uam.bokk_yoon"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCiH_w-xcSpiHQH4UZO9E5vQbCKUs4vlMA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

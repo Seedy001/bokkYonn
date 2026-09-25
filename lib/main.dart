@@ -1,9 +1,19 @@
-import 'package:bokk_yoon/features/onboarding/splash/splash-screen.dart';
 import 'package:flutter/material.dart';
 import 'core/theme/app_theme.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'firebase_options.dart';
+import 'features/auth/pages/auth_gate.dart';
 
-void main() {
-  runApp(const BokkYoonApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  await FirebaseAuth.instance.setSettings(
+    appVerificationDisabledForTesting: true,
+  );
+  runApp(const ProviderScope(child: BokkYoonApp()));
 }
 
 class BokkYoonApp extends StatelessWidget {
@@ -15,7 +25,7 @@ class BokkYoonApp extends StatelessWidget {
       title: 'Bokk Yoon',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: const SplashScreen(),
+      home: const AuthGate(),
     );
   }
 }
