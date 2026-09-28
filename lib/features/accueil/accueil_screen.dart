@@ -1,9 +1,19 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../auth/data/auth_providers.dart';
+import '../../core/utils/formats.dart';
+import '../reservations/data/reservation_repository.dart';
+import '../reservations/domain/reservation.dart';
+import '../reservations/pages/ma_reservation_screen.dart';
+import '../reservations/pages/mes_reservations_screen.dart';
+import '../trajets/pages/detail_trajet_screen.dart';
+import '../trajets/pages/publier_screen.dart';
+import '../trajets/domain/trajet.dart';
+import '../trajets/data/trajet_repository.dart';
 
 /// Accueil (maquette 1d) : en-tête, prochain trajet, trajets suggérés,
 /// barre de navigation Accueil / Rechercher / Publier / Profil.
@@ -24,7 +34,7 @@ class _AccueilScreenState extends State<AccueilScreen> {
     final onglets = [
       _AccueilTab(profil: widget.profil),
       const _Bientot(icone: Icons.search, message: 'Recherche de trajets'),
-      const _Bientot(icone: Icons.add_circle_outline, message: 'Publier un trajet'),
+      PublierScreen(profil: widget.profil),
       _ProfilTab(profil: widget.profil),
     ];
 
@@ -121,7 +131,7 @@ class _NavItem extends StatelessWidget {
 
 // ── Onglet Accueil ──────────────────────────────────────────────
 
-class _AccueilTab extends StatelessWidget {
+class _AccueilTab extends ConsumerWidget {
   final Map<String, dynamic> profil;
 
   const _AccueilTab({required this.profil});
@@ -140,9 +150,16 @@ class _AccueilTab extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final prenom = (profil['prenom'] as String?) ?? '';
-
+final trajetsAsync = ref.watch(trajetsProvider);
+    // Ma réservation la plus récente pour un trajet à venir
+    // (la liste est déjà triée : la plus récente en premier)
+    final mesReservations = ref.watch(mesReservationsProvider).valueOrNull ?? [];
+    final maReservation = mesReservations
+        .where((r) =>
+            r.etat != 'annulee' && r.dateDepart.isAfter(DateTime.now()))
+        .firstOrNull;
     // TODO : remplacer ces exemples par les trajets Firestore
     const suggeres = [
       _Trajet(
@@ -243,8 +260,11 @@ class _AccueilTab extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
             children: [
-              const _ProchainTrajet(),
-              const SizedBox(height: 14),
+              // Ma réservation à venir (cachée si je n'en ai pas)
+              if (maReservation != null) ...[
+                _ProchainTrajet(reservation: maReservation),
+                const SizedBox(height: 14),
+              ],
               Row(
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
@@ -262,10 +282,53 @@ class _AccueilTab extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              for (final t in suggeres) ...[
-                _CarteTrajet(trajet: t),
-                const SizedBox(height: 8),
-              ],
+trajetsAsync.when(
+  loading: () => const Padding(
+    padding: EdgeInsets.all(20),
+    child: Center(child: CircularProgressIndicator()),
+  ),
+  error: (e, _) => Padding(
+    padding: const EdgeInsets.all(20),
+    child: Text(
+'Erreur : $e',     
+ style: AppTextStyles.bodyMedium
+          .copyWith(color: AppColors.textSecondary),
+    ),
+  ),
+  data: (trajets) {
+    // On retire MES propres trajets : on ne se réserve pas soi-même
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final visibles = trajets.where((t) => t.conducteurId != uid).toList();
+
+    if (visibles.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(20),
+        child: Text(
+          'Aucun trajet publié pour le moment',
+          style: AppTextStyles.bodyMedium
+              .copyWith(color: AppColors.textSecondary),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        for (final t in visibles) ...[
+          _CarteTrajet(
+            trajet: _versUi(t),
+            // On passe le vrai Trajet (pas le modèle d'affichage) au détail
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    DetailTrajetScreen(trajet: t, profil: profil),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
+  },
+),
             ],
           ),
         ),
@@ -274,95 +337,111 @@ class _AccueilTab extends StatelessWidget {
   }
 }
 
+/// Carte verte en haut de l'accueil : MA dernière réservation (vraie donnée
+/// Firestore). Cliquable -> écran de suivi « Ma réservation ».
 class _ProchainTrajet extends StatelessWidget {
-  const _ProchainTrajet();
+  final Reservation reservation;
+
+  const _ProchainTrajet({required this.reservation});
+
+  // Libellé du badge selon l'état
+  String get _badge {
+    switch (reservation.etat) {
+      case 'confirmee':
+        return 'Acceptée';
+      case 'refusee':
+        return 'Refusée';
+      default:
+        return 'En attente';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final r = reservation;
     final blanc85 = Colors.white.withValues(alpha: 0.85);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.primary,
+    return Material(
+      color: AppColors.primary,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
         borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => MaReservationScreen(reservationId: r.id),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'PROCHAIN TRAJET',
-                style: AppTextStyles.labelSmall.copyWith(
-                  color: blanc85,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.7,
-                ),
-              ),
-              Container(
-                height: 24,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  'Confirmée',
-                  style: AppTextStyles.labelSmall.copyWith(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'MA RÉSERVATION',
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: blanc85,
+                      letterSpacing: 0.7,
+                    ),
                   ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Diamniadio → Guédiawaye',
-            style: AppTextStyles.titleLarge
-                .copyWith(color: Colors.white, fontSize: 20),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            "Aujourd'hui · 18h30 · Rond-point UAM",
-            style: AppTextStyles.bodyMedium.copyWith(color: blanc85),
-          ),
-          const SizedBox(height: 10),
-          Divider(height: 1, color: Colors.white.withValues(alpha: 0.2)),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const _Avatar(taille: 34, initiale: 'M', surFonce: true),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Moussa Diop',
-                      style: AppTextStyles.bodyMedium.copyWith(
+                  Container(
+                    height: 24,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      // Refusée -> badge rouge pour bien la voir
+                      color: r.etat == 'refusee'
+                          ? AppColors.danger
+                          : Colors.white.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _badge,
+                      style: AppTextStyles.labelSmall.copyWith(
                         color: Colors.white,
-                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    Text(
-                      'Enseignant · Toyota Corolla',
-                      style: AppTextStyles.bodySmall.copyWith(color: blanc85),
-                    ),
-                  ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                r.trajetResume,
+                style: AppTextStyles.titleLarge.copyWith(
+                  color: Colors.white,
+                  fontSize: 20,
                 ),
               ),
+              const SizedBox(height: 6),
               Text(
-                '1 500 F',
-                style: AppTextStyles.price.copyWith(color: AppColors.accent),
+                '${dateFr(r.dateDepart)} · ${heureFr(r.dateDepart)}',
+                style: AppTextStyles.bodyMedium.copyWith(color: blanc85),
+              ),
+              const SizedBox(height: 10),
+              Divider(height: 1, color: Colors.white.withValues(alpha: 0.2)),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Avance versée : ${_prixFr(r.avance)} F',
+                      style: AppTextStyles.bodySmall.copyWith(color: blanc85),
+                    ),
+                  ),
+                  Text(
+                    'Voir',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: Colors.white),
+                ],
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -393,15 +472,22 @@ class _Trajet {
 /// Carte-trajet (réutilisée sur l'accueil, la recherche et les listes).
 class _CarteTrajet extends StatelessWidget {
   final _Trajet trajet;
+  final VoidCallback? onTap; // action au tap sur la carte (ouvrir le détail)
 
-  const _CarteTrajet({required this.trajet});
+  const _CarteTrajet({required this.trajet, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    // Material + InkWell : la carte devient cliquable avec l'effet d'onde
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       decoration: BoxDecoration(
-        color: AppColors.surface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.border),
       ),
@@ -516,6 +602,8 @@ class _CarteTrajet extends StatelessWidget {
           ),
         ],
       ),
+        ),
+      ),
     );
   }
 }
@@ -523,13 +611,8 @@ class _CarteTrajet extends StatelessWidget {
 class _Avatar extends StatelessWidget {
   final double taille;
   final String initiale;
-  final bool surFonce;
 
-  const _Avatar({
-    required this.taille,
-    required this.initiale,
-    this.surFonce = false,
-  });
+  const _Avatar({required this.taille, required this.initiale});
 
   @override
   Widget build(BuildContext context) {
@@ -539,19 +622,13 @@ class _Avatar extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: surFonce
-            ? Colors.white.withValues(alpha: 0.2)
-            : AppColors.primarySoft,
-        border: Border.all(
-          color: surFonce
-              ? Colors.white.withValues(alpha: 0.35)
-              : AppColors.border,
-        ),
+        color: AppColors.primarySoft,
+        border: Border.all(color: AppColors.border),
       ),
       child: Text(
         initiale,
         style: AppTextStyles.bodyMedium.copyWith(
-          color: surFonce ? Colors.white : AppColors.primary,
+          color: AppColors.primary,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -618,6 +695,15 @@ class _ProfilTab extends ConsumerWidget {
             ),
           ),
         const SizedBox(height: 32),
+        // Accès à l'historique de mes réservations (passager)
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const MesReservationsScreen()),
+          ),
+          icon: const Icon(Icons.confirmation_number_outlined),
+          label: const Text('Mes réservations'),
+        ),
+        const SizedBox(height: 12),
         OutlinedButton.icon(
           onPressed: () => ref.read(authRepositoryProvider).deconnexion(),
           icon: const Icon(Icons.logout, color: AppColors.danger),
@@ -634,3 +720,33 @@ class _ProfilTab extends ConsumerWidget {
     );
   }
 }
+
+
+// Transforme un Trajet (Firestore) en _Trajet (affichage de la carte).
+_Trajet _versUi(Trajet t) {
+  return _Trajet(
+    conducteur: t.conducteurNom.isEmpty ? 'Conducteur' : t.conducteurNom,
+    note: _noteFr(t.conducteurNote),
+    profil: t.conducteurStatut,
+    prix: '${_prixFr(t.prix)} F',
+    places: '${t.placesRestantes} place${t.placesRestantes > 1 ? 's' : ''}',
+    depart: t.departZone,
+    arrivee: t.arriveeZone,
+    detail: '${_heureFr(t.dateDepart)} · ${t.departPoint} → ${t.arriveePoint}',
+  );
+}
+
+String _prixFr(int prix) {
+  final s = prix.toString();
+  final buf = StringBuffer();
+  for (int i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) buf.write(' ');
+    buf.write(s[i]);
+  }
+  return buf.toString(); // 1500 -> "1 500"
+}
+
+String _noteFr(double note) => note.toStringAsFixed(1).replaceAll('.', ',');
+
+String _heureFr(DateTime d) =>
+    '${d.hour.toString().padLeft(2, '0')}h${d.minute.toString().padLeft(2, '0')}';

@@ -14,6 +14,11 @@ class InscriptionScreen extends ConsumerStatefulWidget {
 }
 
 class _InscriptionScreenState extends ConsumerState<InscriptionScreen> {
+  // Mode actuel : false = inscription, true = connexion.
+  // On le garde dans l'état pour basculer SANS naviguer
+  // (sinon on remplacerait l'AuthGate qui est à la racine).
+  late bool estConnexion = widget.estConnexion;
+
   // Sert à lire ce que l'utilisateur tape
   final telephoneController = TextEditingController();
 
@@ -89,8 +94,8 @@ class _InscriptionScreenState extends ConsumerState<InscriptionScreen> {
   @override
   Widget build(BuildContext context) {
     // NOUVEAU : on choisit les textes selon le mode
-    final titre = widget.estConnexion ? 'Se connecter' : 'Créer un compte';
-    final sousTitre = widget.estConnexion
+    final titre = estConnexion ? 'Se connecter' : 'Créer un compte';
+    final sousTitre = estConnexion
         ? 'Entrez le numéro de votre compte pour recevoir un code.'
         : "Votre numéro de téléphone est votre identifiant. "
               "Aucun numéro étudiant n'est demandé.";
@@ -105,8 +110,8 @@ class _InscriptionScreenState extends ConsumerState<InscriptionScreen> {
               const SizedBox(height: 40),
 
               // NOUVEAU : "ÉTAPE 1 SUR 2" seulement en mode inscription
-              if (!widget.estConnexion) const Text('ÉTAPE 1 SUR 2'),
-              if (!widget.estConnexion) const SizedBox(height: 8),
+              if (!estConnexion) const Text('ÉTAPE 1 SUR 2'),
+              if (!estConnexion) const SizedBox(height: 8),
 
               // NOUVEAU : titre selon le mode
               Text(
@@ -174,23 +179,17 @@ class _InscriptionScreenState extends ConsumerState<InscriptionScreen> {
               Center(
                 child: GestureDetector(
                   onTap: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => InscriptionScreen(
-                          estConnexion: !widget.estConnexion,
-                        ),
-                      ),
-                    );
+                    // On change juste de mode, l'écran reste le même
+                    setState(() => estConnexion = !estConnexion);
                   },
                   child: Text.rich(
                     TextSpan(
-                      text: widget.estConnexion
+                      text: estConnexion
                           ? 'Pas encore de compte ? '
                           : 'Déjà inscrit ? ',
                       children: [
                         TextSpan(
-                          text: widget.estConnexion
+                          text: estConnexion
                               ? "S'inscrire"
                               : 'Se connecter',
                           style: const TextStyle(
